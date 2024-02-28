@@ -1,11 +1,12 @@
-from requests import get
-from swiftshadow.helpers import getCountryCode, checkProxy, log
+import requests
+from requests.exceptions import Timeout
+from swiftshadow.helpers import get_country_code, validate_proxy
 
 
-def Scrapingant(max, countries=[], protocol="http"):
+def scrapingant(max, countries=[], protocol="http"):
     result = []
     count = 0
-    raw = get("https://scrapingant.com/proxies").text
+    raw = requests.get("https://scrapingant.com/proxies", timeout=5).text
     rows = [i.split("<td>") for i in raw.split("<tr>")]
 
     def clean(text):
@@ -20,33 +21,33 @@ def Scrapingant(max, countries=[], protocol="http"):
         cleaned = [
             clean(row[1]) + ":" + clean(row[2]),
             protocol,
-            getCountryCode(clean(row[4].split(" ", 1)[1])),
+            get_country_code(clean(row[4].split(" ", 1)[1])),
         ]
-        if checkProxy(cleaned, countries):
+        if validate_proxy(cleaned, countries):
             result.append({cleaned[1]: cleaned[0]})
             count += 1
     return result
 
 
-def Proxyscrape(max, countries=[], protocol="http"):
+def proxyscrape(max, countries=[], protocol="http"):
     result = []
     count = 0
-    query = "https://api.proxyscrape.com/v2/?timeout=5000&request=displayproxies&protocol=http"
+    request_url = "https://api.proxyscrape.com/v2/?timeout=5000&request=displayproxies&protocol=http"
     if countries == []:
-        query += "&country=all"
+        request_url += "&country=all"
     else:
-        query += "&country=" + ",".join(countries)
+        request_url += "&country=" + ",".join(countries)
     if protocol == "https":
-        query += "&ssl=yes"
-    ips = get(query).text
+        request_url += "&ssl=yes"
+    ips = requests.get(request_url).text
     for ip in ips.split("\n"):
         if count == max:
             return result
         proxy = [ip.strip(), protocol, "all"]
-        if checkProxy(proxy, []):
+        if validate_proxy(proxy, []):
             result.append({proxy[1]: proxy[0]})
             count += 1
     return result
 
 
-Providers = [Proxyscrape, Scrapingant]
+providers = [proxyscrape, scrapingant]

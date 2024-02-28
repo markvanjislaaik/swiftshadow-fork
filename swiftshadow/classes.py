@@ -1,11 +1,13 @@
 from requests import get
 from random import choice
-from datetime import datetime, timezone, timedelta
-from json import dump, load
-from swiftshadow.helpers import log
-from swiftshadow.providers import Proxyscrape, Scrapingant, Providers
+import json
+from swiftshadow.providers import proxyscrape, scrapingant, Providers
 import swiftshadow.cache as cache
 import os
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class Proxy:
@@ -13,10 +15,10 @@ class Proxy:
         self,
         countries: list = [],
         protocol: str = "http",
-        maxProxies: int = 10,
-        autoRotate: bool = False,
-        cachePeriod: int = 10,
-        cacheFolder: str = "",
+        max_proxies: int = 10,
+        auto_rotate: bool = False,
+        cache_period: int = 10,
+        cache_folder: str = "",
     ):
         """
         The one class for everything.
@@ -26,10 +28,10 @@ class Proxy:
         Args:
                 countries: ISO 3166-2 Two letter country codes to filter proxies.
                 protocol: HTTP/HTTPS protocol to filter proxies.
-                maxProxies: Maximum number of proxies to store and rotate from.
-                autoRotate: Rotates proxy when `Proxy.proxy()` function is called.
-                cachePeriod: Time to cache proxies in minutes.
-                cacheFolder: Folder to store cache file.
+                max_proxies: Maximum number of proxies to store and rotate from.
+                auto_rotate: Rotates proxy when `Proxy.proxy()` function is called.
+                cache_period: Time to cache proxies in minutes.
+                cache_folder: Folder to store cache file.
 
         Returns:
                 proxyClass (swiftshadow.Proxy): `swiftshadow.Proxy` class instance
@@ -45,18 +47,18 @@ class Proxy:
         """
         self.countries = [i.upper() for i in countries]
         self.protocol = protocol
-        self.maxProxies = maxProxies
-        self.autoRotate = autoRotate
-        self.cachePeriod = cachePeriod
-        if cacheFolder != "":
-            self.cacheFilePath = ".swiftshadow.json"
+        self.max_proxies = max_proxies
+        self.auto_rotate = auto_rotate
+        self.cache_period = cache_period
+        if cache_folder != "":
+            self.cache_file_path = ".swiftshadow.json"
         else:
-            self.cacheFilePath = f"{cacheFolder}/.swiftshadow.json"
+            self.cache_file_path = f"{cache_folder}/.swiftshadow.json"
 
         self.update()
 
-    def checkIp(self, ip, cc, protocol):
-        if (ip[1] == cc or cc == None) and ip[2] == protocol:
+    def validate(self, ip, cc, protocol):
+        if (ip[1] == cc or cc is None) and ip[2] == protocol:
             proxy = {ip[2]: ip[0]}
             try:
                 oip = get(f"{protocol}://ipinfo.io/ip", proxies=proxy).text
@@ -66,47 +68,42 @@ class Proxy:
                 return True
             else:
                 return False
-        else:
-            return False
+        return False
 
     def update(self):
         try:
-            with open(self.cacheFilePath, "r") as file:
-                data = load(file)
+            with open(self.cache_file_path, "r") as file:
+                data = json.load(file)
                 self.expiry = data[0]
-                expired = cache.checkExpiry(self.expiry)
+                expired = cache.check_expiry(self.expiry)
             if not expired:
-                log(
-                    "info",
-                    f"Loaded proxies from cache",
-                )
+                logger.info("Loaded proxies from cache")
                 self.proxies = data[1]
                 self.expiry = data[0]
                 self.current = self.proxies[0]
                 return
             else:
-                log(
-                    "info",
-                    f"Cache expired. Updating cache...",
-                )
+                logger.info("Cache expired. Updating cache...")
         except FileNotFoundError:
-            log("error", "No cache found. Cache will be created after update")
+            logger.error("No cache found. Cache will be created after update")
 
         self.proxies = []
-        self.proxies.extend(Proxyscrape(self.maxProxies, self.countries, self.protocol))
-        if len(self.proxies) != self.maxProxies:
+        self.proxies.extend(proxyscrape(self.max_proxies, self.countries, self.protocol))
+        if len(self.proxies) != self.max_proxies:
             self.proxies.extend(
-                Scrapingant(self.maxProxies, self.countries, self.protocol)
+                scrapingant(self.max_proxies, self.countries, self.protocol)
             )
         if len(self.proxies) == 0:
-            log(
-                "warning",
-                "No proxies found for current settings. To prevent runtime error updating the proxy list again.",
-            )
+            # TODO: Investigate why this would cause a runtime error and fix that at source, rather than logging an error about it
+            # log(
+            #     "warning",
+            #     "No proxies found for current settings. To prevent runtime error updating the proxy list again.",
+            # )
+            logger.warning("No proxies found for current settings. Updating again...")
             self.update()
-        with open(self.cacheFilePath, "w") as file:
-            self.expiry = cache.getExpiry(self.cachePeriod).isoformat()
-            dump([self.expiry, self.proxies], file)
+        with open(self.cache_file_path, "w") as file:
+            self.expiry = cache.get_expiry(self.cache_period).isoformat()
+            json.dump([self.expiry, self.proxies], file)
         self.current = self.proxies[0]
 
     def rotate(self):
@@ -116,9 +113,9 @@ class Proxy:
         Sets the current proxy to a random one from available proxies and also validates cache.
 
         Note:
-                Function only for manual rotation. If `autoRotate` is set to `True` then no need to call this function.
+                Function only for manual rotation. If `auto_rotate` is set to `True` then no need to call this function.
         """
-        if cache.checkExpiry(self.expiry):
+        if cache.check_expiry(self.expiry):
             self.update()
         self.current = choice(self.proxies)
 
@@ -129,31 +126,29 @@ class Proxy:
         Returns:
                 proxyDict (dict):A proxy dict of format `{protocol:address}`
         """
-        if cache.checkExpiry(self.expiry):
+        if cache.check_expiry(self.expiry):
             self.update()
-        if self.autoRotate == True:
+        if self.auto_rotate == True:
             return choice(self.proxies)
         else:
             return self.current
 
 
 class ProxyChains:
-    def __init__(
-        self, countries: list = [], protocol: str = "http", maxProxies: int = 10
-    ):
+    def __init__(self, countries: list = [], protocol: str = "http", max_proxies: int = 10):
         self.countries = [i.upper() for i in countries]
         self.protocol = protocol
-        self.maxProxies = maxProxies
+        self.max_proxies = max_proxies
         self.update()
 
     def update(self):
         proxies = []
         for provider in Providers:
-            print(len(proxies))
-            if len(proxies) == self.maxProxies:
+            logger.info(f"Proxy Count: {len(proxies)}")
+            if len(proxies) == self.max_proxies:
                 break
-            log("INFO", f"{provider}")
-            for proxyDict in provider(self.maxProxies, self.countries, self.protocol):
+            logger.info(f"{provider}")
+            for proxyDict in provider(self.max_proxies, self.countries, self.protocol):
                 proxyRaw = list(proxyDict.items())[0]
                 proxy = f'{proxyRaw[0]} {proxyRaw[1].replace(":"," ")}'
                 proxies.append(proxy)

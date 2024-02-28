@@ -1,4 +1,4 @@
-from swiftshadow.providers import Proxyscrape, Scrapingant
+from swiftshadow.providers import proxyscrape, scrapingant
 
 
 def QuickProxy(countries: list = [], protocol: str = "http"):
@@ -14,6 +14,6 @@ def QuickProxy(countries: list = [], protocol: str = "http"):
                     proxyObject (dict): A working proxy object.
     """
     try:
-        return Proxyscrape(1, countries=countries, protocol=protocol)[0]
+        return proxyscrape(1, countries=countries, protocol=protocol)[0]
     except:
-        return Scrapingant(1, countries=countries, protocol=protocol)[0]
+        return scrapingant(1, countries=countries, protocol=protocol)[0]

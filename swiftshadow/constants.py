@@ -1,4 +1,4 @@
-CountryCodes = {
+country_codes = {
     "Afghanistan": "AF",
     "Åland Islands": "AX",
     "Albania": "AL",
